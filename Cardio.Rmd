@@ -1,3 +1,9 @@
+---
+title: "Cardio"
+author: "Daniel Herrera"
+date: "11/14/2021"
+output: html_document
+---
 Cardiovascular diseases kill approximately 17 million people globally every year, and they mainly exhibit as myocardial infarctions and heart failures. Heart failure occurs when the heart cannot pump enough blood to meet the needs of the body. Available electronic medical records of patients quantify symptoms, body features, and clinical laboratory test values, which can be used to perform biostatistics analysis aimed at highlighting patterns and correlations otherwise undetectable by medical doctors. Machine learning, in particular, can predict patients’ survival from their data and can individuate the most important features among those included in their medical records.
 
 We will be exlploring data from this [study](https://bmcmedinformdecismak.biomedcentral.com/articles/10.1186/s12911-020-1023-5#Tab4) that includes 299 patients with heart failure. The variables available are described below.
@@ -20,6 +26,18 @@ We will be exlploring data from this [study](https://bmcmedinformdecismak.biomed
 Here we will build models to predict the outcome, `DEATH_EVENT`. Run the code below to load the data and create training and test sets. We will use a 70% training, 30% test set split. Note that we have an imbalance in outcome groups (96/299 = 32% of patients died and 68% did not), so we need to take this into account when we split our data into training and test sets. Here we use a new function, `stratified`, from the `splitstackshape` package to split the data. The `stratified` function samples the same percent of individuals from each class - in this case, `DEATH_EVENT`.  
 
 ```{r}
+# library upload
+library(splitstackshape)
+library(tidyverse)
+library(caret)
+library(MASS)
+library(pROC)
+library(rpart)
+library(randomForest)
+library(e1071)
+library(knitr)
+library(ggthemes)
+
 data <- read.csv("heart_failure_clinical_records_dataset.csv")
 
 set.seed(1)
@@ -164,19 +182,11 @@ Additionally, we saw that the highest accuracy was achieved by the KNN model, so
 Lastly, the sensitivity for the KNN model is as high or higher than the other models. If we are more interested in our predictions of among those with the event of death, then this model is our preferred choice. 
 
 ```{r}
-# calculate AUC 
-# logistic AUC
+# calculate AUC
+roclist <- list("Logistic" = glm_roc, 
+                "KNN(k=12)" = knn_roc,
+                "Naive Bayes" = nb_roc)
 
-glm_auc <- round(auc(test_set$DEATH_EVENT, p_hat_glm), 4)
-glm_auc
-
-# naive bayes auc
-nb_auc <- round(auc(test_set$DEATH_EVENT, mypred_raw_nb), 4)
-nb_auc
-
-# knn auc
-knn_auc <- round(auc(test_set$DEATH_EVENT, p_hat_knn), 4)
-knn_auc
-
+kable(data.frame(lapply(roclist,auc)))
 ```
 
