@@ -1,2 +1,4 @@
 # CardioStudy
-Examination of cardiovascular study data with basic machine learning techniques
+Examination of cardiovascular study data with basic machine learning techniques such as: logistic regression, k-nearest neighbors, naive bayes, LDA, QDA, decision trees, random forests.
+
+
