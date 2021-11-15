@@ -190,3 +190,310 @@ roclist <- list("Logistic" = glm_roc,
 kable(data.frame(lapply(roclist,auc)))
 ```
 
+
+
+
+---
+title: 'Homework #4: Machine Learning Part II'
+date: "Due December 3, 2021 by 11:59pm EST"
+output: html_document
+---
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(splitstackshape)
+library(caret)
+library(MASS)
+library(pROC)
+library(rpart)
+library(randomForest)
+library(knitr)
+
+# library add ggthemes and install.packages
+# install.packages("ggthemes", repos = "http://cran.us.r-project.org")
+library(ggthemes)
+```
+
+### Heart Failure Revisited
+
+We will use the same cardiovascular dataset from HW3. As a reminder, cardiovascular diseases kill approximately 17 million people globally every year, and they mainly exhibit as myocardial infarctions and heart failures. Heart failure occurs when the heart cannot pump enough blood to meet the needs of the body. Available electronic medical records of patients quantify symptoms, body features, and clinical laboratory test values, which can be used to perform biostatistics analysis aimed at highlighting patterns and correlations otherwise undetectable by medical doctors. Machine learning, in particular, can predict patients’ survival from their data and can individuate the most important features among those included in their medical records.
+
+We will be using data from this [study](https://bmcmedinformdecismak.biomedcentral.com/articles/10.1186/s12911-020-1023-5#Tab4) that includes 299 patients with heart failure. The variables available are described below.
+
+- `age`: age of the patient (years)
+- `anaemia`: decrease of red blood cells or hemoglobin (binary; 0 = no, 1 = yes)
+- `high_blood_pressure`: if the patient has hypertension (binary; 0 = no, 1 = yes)
+- `creatinine_phosphokinase` (CPK): level of the CPK enzyme in the blood (mcg/L)
+- `diabetes`: if the patient has diabetes (binary; 0 = no, 1 = yes)
+- `ejection_fraction`: percentage of blood leaving the heart at each contraction (percentage)
+- `platelets`: platelets in the blood (kiloplatelets/mL)
+- `sex`: woman or man (binary; 0 = female, 1 = male)
+- `serum_creatinine`: level of serum creatinine in the blood (mg/dL)
+- `serum_sodium`: level of serum sodium in the blood (mEq/L)
+- `smoking`: if the patient smokes or not (binary; 0 = no, 1 = yes)
+- `time`: follow-up period (days)
+- `DEATH_EVENT`: if the patient deceased during the follow-up period (binary; 0 = no, 1 = yes)
+
+
+Here we will build models to predict the outcome, `DEATH_EVENT`. Run the code below to load the data and create training and test sets. We will use a 70% training, 30% test set split. Note that we have an imbalance in outcome groups (96/299 = 32% of patients died and 68% did not), so we need to take this into account when we split our data into training and test sets. Here we use a new function, `stratified`, from the `splitstackshape` package to split the data. The `stratified` function samples the same percent of individuals from each class - in this case, `DEATH_EVENT`. Note: keep `set.seed(1)` so you get the same train/test split and model predictions we do. We have also made all binary and categorical variables into factors here so you do not need to do it later on or in your models.
+
+```{r}
+data <- read.csv("heart_failure_clinical_records_dataset.csv")
+
+# Turn categorical variables into factors (and not numeric)
+data <- data %>% mutate(diabetes = as.factor(diabetes),
+                        sex = as.factor(sex),
+                        anaemia = as.factor(anaemia),
+                        high_blood_pressure = as.factor(high_blood_pressure),
+                        smoking = as.factor(smoking),
+                        DEATH_EVENT = as.factor(DEATH_EVENT))
+
+set.seed(1)
+
+x <- stratified(data, "DEATH_EVENT", 0.7, keep.rownames = TRUE)
+train_set <- x %>% dplyr::select(-rn)
+train_index <- as.numeric(x$rn)
+test_set <- data[-train_index,]
+
+dim(train_set)
+dim(test_set)
+```
+
+
+#### Question 1
+**Using the `lda` function, fit an LDA model to the training set that predicts `DEATH_EVENT` based on all of the other variables except `time`. Then, use the `predict` function to get probability estimates for the test set. Your code should look something like this to get the predicted probabilities: `predict(lda_fit, newdata = test_set)$posterior[,2]`. Next, convert the probabilities to predicted response labels (use a cutoff of 0.5). Obtain the accuracy, confusion matrix, and other relevant diagnostic statistics for the test set. Explain what the confusion matrix and the sensitivity/specificity are telling you about the types of errors that your model is making.**
+
+We see that the accuracy of our model is 72.22% for the LDA model. The sensitivity and specificity are imbalanced; this suggests in this case that our model is better able to predict those who do not actually die (survive) compared to correctly predicting those who die, indicated by our lower sensitivity relative to specificity. 
+
+
+```{r}
+set.seed(1)
+# use lda on training sit to predict death_event
+# all variables except time
+lda_model <- lda(DEATH_EVENT ~ .-time, data = train_set)
+
+# use predict to get estimates for test set
+# this will give predicted probabilities
+lda_prob <- predict(lda_model, test_set)$posterior[,2]
+
+# use 0.5 as the cutoff for probabilities 
+lda_pred <- ifelse(lda_prob >= 0.5, 1, 0)
+
+# obtain accuracy, confusion matrix
+confusionMatrix(data = as.factor(lda_pred), reference = as.factor(test_set$DEATH_EVENT), positive = "1")
+acc_lda <- confusionMatrix(data = as.factor(lda_pred), reference = as.factor(test_set$DEATH_EVENT), positive = "1")$overall[1]
+
+
+```
+
+
+#### Question 2
+Using the `qda` function, fit an QDA model to the training set that predicts `DEATH_EVENT` based on all of the other variables except `time`. Then, use the `predict` function to get probability estimates for the test set. Your code should look something like this to get the predicted probabilities: `predict(qda_fit, newdata = test_set)$posterior[,2]`. Next, convert the probabilities to predicted response labels (use a cutoff of 0.5). Obtain the accuracy, confusion matrix, and other relevant diagnostic statistics for the test set. Explain what the confusion matrix and the sensitivity/specificity are telling you about the types of errors that your model is making.
+
+The accuracy for the QDA model is 71.11%, lower than LDA.We see that similar to LDA, the sensitivity and specificity are imbalanced; this suggests in this case that our model is better able to predict those who do not actually die (survive) compared to correctly predicting those who die, indicated by our lower sensitivity relative to specificity. 
+
+
+```{r}
+set.seed(1)
+# use qda on training sit to predict death_event
+# all variables except time
+qda_model <- qda(DEATH_EVENT ~ .-time, data = train_set)
+
+# use predict to get estimates for test set
+# this will give predicted probabilities
+qda_prob <- predict(qda_model, test_set)$posterior[,2]
+
+# use 0.5 as the cutoff for probabilities 
+qda_pred <- ifelse(qda_prob >= 0.5, 1, 0)
+
+# obtain accuracy, confusion matrix
+confusionMatrix(data = as.factor(qda_pred), reference = as.factor(test_set$DEATH_EVENT), positive = "1")
+acc_qda <- confusionMatrix(data = as.factor(qda_pred), reference = as.factor(test_set$DEATH_EVENT), positive = "1")$overall[1]
+
+```
+
+
+#### Question 3
+**Using the `rpart` function, fit a decision tree model to the training set that predicts `DEATH_EVENT` based on all of the other variables except `time`. Then, use the `predict` function to get probability estimates for the test set, and convert the probabilities to predicted response labels (use a cutoff of 0.5). Obtain the accuracy, confusion matrix, and other relevant diagnostic statistics for the test set. Explain what the confusion matrix and the sensitivity/specificity are telling you about the types of errors that your model is making.**
+
+We see here that the accuracy is the highest of all previous models at 74.44%. We continue to notice an imbalance in sensitivity and specificity; we are continuing to have a more challenging time predicting those who die out of those whom actually died when compared to correctly predicting survivors of those who survived, indicated  as our sensitivity is lower than our specificity. 
+
+
+```{r}
+set.seed(1)
+# fit a decision tree using rpart
+# all predictors except time 
+
+tree_model <- rpart(DEATH_EVENT ~ .-time, data = train_set)
+
+# add stuff from lecture recording here
+# probabilities here 
+tree_probs <- predict(tree_model, newdata = test_set)[,2]
+tree_preds <- factor(ifelse(tree_probs >= 0.5, 1, 0))
+
+# obtain confustionMatrix
+confusionMatrix(data = tree_preds, reference = test_set$DEATH_EVENT, positive = "1")
+
+acc_tree <- confusionMatrix(data = tree_preds, reference = test_set$DEATH_EVENT, positive = "1")$overall[1]
+
+```
+
+
+
+#### Question 4
+**Using the `randomForest` function, fit a Random Forest model to the training set that predicts `DEATH_EVENT` based on all of the other variables except `time`. Then, use the `predict` function to get probability estimates for the test set, and convert the probabilities to predicted response labels (use a cutoff of 0.5). Obtain the accuracy, confusion matrix, and other relevant diagnostic statistics for the test set. Explain what the confusion matrix and the sensitivity/specificity are telling you about the types of errors that your model is making.**
+
+The accuracy in our random forest model is the same as the decision tree at 74.44%. As before, we continue to see the same pattern with sensitivity and specificity as mentioned previously. 
+
+
+```{r}
+set.seed(1)
+# fit a randomForest model
+# all predictors except time 
+# we will use default randomforest arguments
+forest_model <- randomForest(DEATH_EVENT ~ .-time, data = train_set)
+
+
+# probabilities predicted
+forest_probs <- predict(forest_model, newdata = test_set, type = "prob")[,2]
+# binary predictions
+forest_preds <- factor(ifelse(forest_probs > 0.5, 1, 0))
+
+# obtain confusionMatrix
+confusionMatrix(data = as.factor(forest_preds), reference = test_set$DEATH_EVENT, positive = "1")
+acc_forest <- confusionMatrix(data = forest_preds, reference = test_set$DEATH_EVENT, positive = "1")$overall[1]
+
+```
+
+
+
+#### Question 5
+**In the paper the authors find that `ejection_fraction` and `serum_creatinine` were the most predictive of the outcome. Calculate variable importance using the Gini index for the Random Forest model from question 4. Order the features from highest Gini index to smallest, i.e., in descending order. Do your top 2 most predictive features (features with the highest Gini index) match those of the authors?**
+
+Yes, our top two predictors are the most predictive features, ie highest Gini index; this coincides with the authors findings. 
+
+```{r}
+# calculate cariable importance using Gini index 
+variable_importance <- importance(forest_model) 
+
+tmp <- data_frame(feature = rownames(variable_importance),
+                  Gini = variable_importance[,1]) %>%
+                  arrange(desc(Gini)) # arrange from highest to lowest gini value
+kable(tmp[1:2,])
+
+```
+
+
+#### Question 6
+**Rebuild the same 4 models you used for questions 1-4 (LDA, QDA, decision tree, Random Forest), but with `ejection_fraction` and `serum_creatinine` as the only predictors. Obtain the accuracy, confusion matrix, and other relevant diagnostic statistics for the test set. Is there an increase in overall accuracy for each model? Which model performs the best in terms of overall accuracy?**
+
+We see that the accuracy does increase for LDA from model 1 to model 2 (ejection fraction and serum creatinine only) from 72.22 to 73.33.
+
+We see that the accuracy of our decision tree model increases to 80% from 74.44% when we use only the two most important predictors. 
+
+For our qda model and our random forest model, we notice that there is no change from one model to the next in accuracy. 
+
+
+```{r}
+set.seed(1)
+
+# LDA
+lda_mod2 <- lda(DEATH_EVENT ~ ejection_fraction + serum_creatinine, data = train_set)
+lda_probs2 <- predict(lda_mod2, test_set)$posterior[,2]
+lda_pred2 <- ifelse(lda_probs2 >= 0.5, 1, 0)
+confusionMatrix(data = as.factor(lda_pred2), reference = as.factor(test_set$DEATH_EVENT), positive = "1")
+
+acc_lda2 <- confusionMatrix(data = as.factor(lda_pred2), reference = as.factor(test_set$DEATH_EVENT), positive = "1")$overall[1]
+
+# QDA
+qda_mod2 <- qda(DEATH_EVENT ~ ejection_fraction + serum_creatinine, data = train_set)
+qda_probs2 <- predict(qda_mod2, test_set)$posterior[,2]
+qda_pred2 <- ifelse(qda_probs2 >= 0.5, 1, 0)
+confusionMatrix(data = as.factor(qda_pred2), reference = as.factor(test_set$DEATH_EVENT), positive = "1")
+
+acc_qda2 <- confusionMatrix(data = as.factor(qda_pred2), reference = as.factor(test_set$DEATH_EVENT), positive = "1")$overall[1]
+
+# Decision Tree
+
+tree_model2 <- rpart(DEATH_EVENT ~ ejection_fraction + serum_creatinine, data = train_set)
+tree_probs2 <- predict(tree_model2, newdata = test_set)[,2]
+tree_preds2 <- factor(ifelse(tree_probs2 >= 0.5, 1, 0))
+confusionMatrix(data = tree_preds2, reference = test_set$DEATH_EVENT, positive = "1")
+
+acc_tree2 <- confusionMatrix(data = tree_preds2, reference = test_set$DEATH_EVENT, positive = "1")$overall[1]
+
+
+# Random Forest
+forest_model2 <- randomForest(DEATH_EVENT ~ ejection_fraction + serum_creatinine, data = train_set)
+forest_probs2 <- predict(forest_model2, newdata = test_set, type = "prob")[,2]
+forest_preds2 <- factor(ifelse(forest_probs2 > 0.5, 1, 0))
+confusionMatrix(data = forest_preds2, reference = test_set$DEATH_EVENT, positive = "1")
+
+acc_forest2 <- confusionMatrix(data = forest_preds2, reference = test_set$DEATH_EVENT, positive = "1")$overall[1]
+
+
+myaccur <- data.frame(model = c("lda", "qda", "tree", "forest"),
+                      fullmod_accuracy = c(acc_lda, acc_qda, acc_tree, acc_forest),
+                      reducedmod_accuracy = c(acc_lda2, acc_qda2, acc_tree2, acc_forest2)
+                      )
+
+kable(myaccur)
+
+```
+
+
+
+#### Question 7
+**Using the models you built in question 6, plot 4 ROC curves - one for each model - on the same graph. Be sure to include a legend and appropriate axis labels.** 
+
+
+```{r, message=FALSE}
+
+# use ggroc here, make a list of the models
+
+lda_roc <- roc(test_set$DEATH_EVENT, lda_probs2)
+qda_roc <- roc(test_set$DEATH_EVENT, qda_probs2)
+dt_roc <- roc(test_set$DEATH_EVENT, tree_probs2)
+rf_roc <- roc(test_set$DEATH_EVENT, forest_probs2)
+
+
+
+
+roclist <- list("LDA" = lda_roc, 
+                "QDA" = qda_roc,
+                "Decision Tree" = dt_roc,
+                "Random Forest" = rf_roc
+)
+
+# note legacy.axes makes it go from 0 to 1
+g2 <- ggroc(roclist, legacy.axes = T, aes = "colour", size =1.5) +
+  geom_abline(linetype = "dashed", alpha = 0.4) + 
+  ggtitle("ROC Curve") +
+  xlab("1- Specificity") + 
+  ylab("Sensitivity")+
+  guides(colour = guide_legend(title = "Models")) + 
+  theme_wsj() +
+  theme(title = element_text(size = 15)) +
+  theme(axis.title = element_text(size = 12, face = "bold")) +
+  theme(legend.title = element_text(size = 10, face = "bold"))
+
+g2
+```
+
+
+
+#### Question 8
+**Calculate the AUC for each of the 4 models from question 6. Which one achieves the highest AUC? Which model would you choose as the best model? Note: There is no one right answer for this - as long as you justify your choice you will receive credit.** 
+
+The highest AUC comes from the randomForest model. This model has an AUC of 0.7761. However, the accuracy is highest in the decision tree model. As a result, I would select the decision tree model as the best model, even if it has a lower AUC. Additionally, we see that at a specific cutoff, the decision tree model is actually closest to the point (0,1) on the ROC curve, which is ideal. Lastly, the decision tree offers a more interpretable response than the random forest approach.
+
+```{r}
+# calculate AUC 
+
+myrocs <- list("lda" = lda_roc, "qda" = qda_roc, "tree" = dt_roc, "forest" = rf_roc)
+kable(data.frame(lapply(myrocs, auc)))
+
+
+```
+
+
