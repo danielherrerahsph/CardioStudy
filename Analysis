@@ -1,0 +1,182 @@
+Cardiovascular diseases kill approximately 17 million people globally every year, and they mainly exhibit as myocardial infarctions and heart failures. Heart failure occurs when the heart cannot pump enough blood to meet the needs of the body. Available electronic medical records of patients quantify symptoms, body features, and clinical laboratory test values, which can be used to perform biostatistics analysis aimed at highlighting patterns and correlations otherwise undetectable by medical doctors. Machine learning, in particular, can predict patients’ survival from their data and can individuate the most important features among those included in their medical records.
+
+We will be exlploring data from this [study](https://bmcmedinformdecismak.biomedcentral.com/articles/10.1186/s12911-020-1023-5#Tab4) that includes 299 patients with heart failure. The variables available are described below.
+
+- `age`: age of the patient (years)
+- `anaemia`: decrease of red blood cells or hemoglobin (binary; 0 = no, 1 = yes)
+- `high_blood_pressure`: if the patient has hypertension (binary; 0 = no, 1 = yes)
+- `creatinine_phosphokinase` (CPK): level of the CPK enzyme in the blood (mcg/L)
+- `diabetes`: if the patient has diabetes (binary; 0 = no, 1 = yes)
+- `ejection_fraction`: percentage of blood leaving the heart at each contraction (percentage)
+- `platelets`: platelets in the blood (kiloplatelets/mL)
+- `sex`: woman or man (binary; 0 = female, 1 = male)
+- `serum_creatinine`: level of serum creatinine in the blood (mg/dL)
+- `serum_sodium`: level of serum sodium in the blood (mEq/L)
+- `smoking`: if the patient smokes or not (binary; 0 = no, 1 = yes)
+- `time`: follow-up period (days)
+- `DEATH_EVENT`: if the patient deceased during the follow-up period (binary; 0 = no, 1 = yes)
+
+
+Here we will build models to predict the outcome, `DEATH_EVENT`. Run the code below to load the data and create training and test sets. We will use a 70% training, 30% test set split. Note that we have an imbalance in outcome groups (96/299 = 32% of patients died and 68% did not), so we need to take this into account when we split our data into training and test sets. Here we use a new function, `stratified`, from the `splitstackshape` package to split the data. The `stratified` function samples the same percent of individuals from each class - in this case, `DEATH_EVENT`.  
+
+```{r}
+data <- read.csv("heart_failure_clinical_records_dataset.csv")
+
+set.seed(1)
+
+# use stratified to keep the same percent of individuals in outcomes when sampling
+x <- stratified(data, "DEATH_EVENT", 0.7, keep.rownames = TRUE)
+# not quite sure what this is doing? 
+train_set <- x %>% dplyr::select(-rn)
+# the training index is equal to rn values
+train_index <- as.numeric(x$rn)
+# the test set is all others
+test_set <- data[-train_index,] 
+
+dim(train_set)
+dim(test_set)
+```
+
+
+The accuracy of the logistic regression model is better than a random coin toss (at 68.89%). We see that the sensitivity, our ability to correctly predict true positives (predicting death) among those who did in fact die, is quite low (41.38%) However, this is imbalanced with the  relatively high specificity of 81.97%. 
+Thus, among those who survive (death event = 0), we are not predicting many correctly as surviving. Our model is thereby making more errors in correctly identifying those who survive (death event = 0) than those who die (death event = 1);  this is further shown by the higher value for the Negative Predictive Value (NPV) compared to the Positive Predictive Value (PPV) than.
+
+
+```{r}
+# build model to the training set 
+glm_full_model <- glm(DEATH_EVENT ~ .-time,  family = "binomial", data = train_set)
+summary(glm_full_model) # use summary to see that time is removed
+
+# predict function 
+p_hat_glm <- predict(glm_full_model, newdata = test_set, type = "response")
+mypred_glm <- ifelse(p_hat_glm > 0.5, 1, 0)
+
+# make confusion matrix
+confusionMatrix(data = as.factor(mypred_glm), reference = as.factor(test_set$DEATH_EVENT), positive = "1")
+
+```
+
+
+The accuracy of the naive Bayes model is better than a random coin toss (at 66.67%), but it is lower than the logistic regression model. We see that the sensitivity, our ability to correctly predict true positives (predicting death) among those who did in fact die, is quite low at 24.14%%. However, this is imbalanced with the a relatively high specificity of 86.89%. Thus, among those who actually survive (death event = 0), we are predicting many correctly as surviving. Our model is thereby making more errors in correctly identifying those who die (death event = 1) than those who survive (death event = 0); this is further shown by the lower value for the Positive Predictive Value (PPV) than the Negative Predictive Value (NPV).
+
+```{r}
+# create full model using naiveBayes without time as covariate
+nb_full_model <- naiveBayes(DEATH_EVENT ~ .-time, data = train_set)
+#create yhat predictions, here they will be predictions and not probabilities
+mypred_nb <- predict(nb_full_model, test_set)
+confusionMatrix(data = as.factor(mypred_nb), reference = as.factor(test_set$DEATH_EVENT), positive = "1")
+
+```
+
+
+The accuracy of the k-nearest neighbors model is better than a random coin toss (at 71.11%) and is the highest of our previous models. We see that the specificity, our ability to correctly predict true negatives (survivors) among those who did in fact survive, is quite high at 98.36%. However, this is imbalanced with the a very low sensitivity of 13.79%. Thus, among those who actually die (death event = 1), we are not predicting many correctly as dying, and in fact doing far worse than a random coin flip. Our model is thereby making more errors in correctly identifying those who die (death event = 1) than those who survive (death event = 0).
+
+
+
+```{r}
+# knn using all but time as covariates, and k = 12 neighbors
+# cutoff 0.5 for predictors
+knn_model <- knn3(DEATH_EVENT ~ .-time, data = train_set, k = 12) # chose 12 nearest neighbors
+p_hat_knn <- predict(knn_model, newdata = test_set)[,2] # chose column 2 because this is prob y=1
+mypred_knn <- ifelse(p_hat_knn > 0.5, 1, 0)
+
+confusionMatrix(data = as.factor(mypred_knn), reference = as.factor(test_set$DEATH_EVENT), positive = "1")
+```
+
+
+There is an increase in terms of overall accuracy for all models, which is shown in the table below. 
+In terms of overall accuracy, the best performing model is still the KNN model. 
+
+```{r}
+## Logistic regression
+# build model to the training set 
+glm_red_model <- glm(DEATH_EVENT ~ ejection_fraction + serum_creatinine,  family = "binomial", data = train_set)
+summary(glm_red_model) # use summary to see that time is removed
+# predict function 
+p_hat_glm <- predict(glm_red_model, newdata = test_set, type = "response")
+mypred_glm <- ifelse(p_hat_glm > 0.5, 1, 0)
+# make confusion matrix
+confusionMatrix(data = as.factor(mypred_glm), reference = as.factor(test_set$DEATH_EVENT), positive = "1")
+
+
+
+## Naive Bayes
+nb_red_model <- naiveBayes(DEATH_EVENT ~ ejection_fraction + serum_creatinine, data = train_set)
+#create yhat predictions, here they will be predictions and not probabilities
+mypred_nb <- predict(nb_red_model, test_set)
+confusionMatrix(data = as.factor(mypred_nb), reference = as.factor(test_set$DEATH_EVENT), positive = "1")
+
+
+## kNN
+knn_red_model <- knn3(DEATH_EVENT ~ ejection_fraction + serum_creatinine, data = train_set, k = 12) # chose 12 nearest neighbors
+p_hat_knn <- predict(knn_red_model, newdata = test_set)[,2] # chose column 2 because this is prob y=1
+mypred_knn <- ifelse(p_hat_knn > 0.5, 1, 0)
+
+confusionMatrix(data = as.factor(mypred_knn), reference = as.factor(test_set$DEATH_EVENT), positive = "1")
+
+
+
+# table of accuracy across models
+accuracies <- data.frame(model = c("Logistic", "NB", "KNN"),
+                         accuracy = c(
+                           confusionMatrix(data = as.factor(mypred_glm), reference = as.factor(test_set$DEATH_EVENT))$overall[1],
+                           confusionMatrix(data = as.factor(mypred_nb), reference = as.factor(test_set$DEATH_EVENT))$overall[1],
+                           confusionMatrix(data = as.factor(mypred_knn), reference = as.factor(test_set$DEATH_EVENT))$overall[1]),
+                         previousAccuracy = c(0.6889, 0.6667, 0.7111)
+)
+accuracies 
+```
+
+
+We will plot ROC curves to visualize the performance of these models. 
+
+```{r, message=FALSE}
+glm_roc <- roc(test_set$DEATH_EVENT, p_hat_glm)
+
+knn_roc <- roc(test_set$DEATH_EVENT, p_hat_knn)
+
+mypred_raw_nb <- predict(nb_red_model, test_set, type = "raw")[,2]
+nb_roc <- roc(test_set$DEATH_EVENT, mypred_raw_nb)
+
+roclist <- list("Logistic" = glm_roc, 
+                "KNN(k=12)" = knn_roc,
+                "Naive Bayes" = nb_roc)
+
+# note legacy.axes makes it go from 0 to 1
+g2 <- ggroc(roclist, legacy.axes = T, aes = "colour") +
+  geom_abline(linetype = "dashed", alpha = 0.4) + 
+  ggtitle("ROC Curve") +
+  xlab("1- Specificity") + 
+  ylab("Sensitivity")+
+  guides(colour = guide_legend(title = "Models")) + 
+  theme_wsj() +
+  theme(title = element_text(size = 15)) +
+  theme(axis.title = element_text(size = 12, face = "bold")) +
+  theme(legend.title = element_text(size = 10, face = "bold"))
+
+g2
+```
+
+The highest AUC is achieved by the K nearest neighbors model (KNN). We can see how this is reflected in the ROC Curve as well which indicates it is the better model as it shows a higher sensitivity almost across the range of specificity values along the ROC Curve. 
+
+Additionally, we saw that the highest accuracy was achieved by the KNN model, so that provides another reason to select KNN as the preferred model. 
+
+Lastly, the sensitivity for the KNN model is as high or higher than the other models. If we are more interested in our predictions of among those with the event of death, then this model is our preferred choice. 
+
+```{r}
+# calculate AUC 
+# logistic AUC
+
+glm_auc <- round(auc(test_set$DEATH_EVENT, p_hat_glm), 4)
+glm_auc
+
+# naive bayes auc
+nb_auc <- round(auc(test_set$DEATH_EVENT, mypred_raw_nb), 4)
+nb_auc
+
+# knn auc
+knn_auc <- round(auc(test_set$DEATH_EVENT, p_hat_knn), 4)
+knn_auc
+
+```
+
