@@ -193,12 +193,6 @@ kable(data.frame(lapply(roclist,auc)))
 
 
 
----
-title: 'Homework #4: Machine Learning Part II'
-date: "Due December 3, 2021 by 11:59pm EST"
-output: html_document
----
-
 ```{r, echo=FALSE, message=FALSE, warning=FALSE}
 library(tidyverse)
 library(splitstackshape)
